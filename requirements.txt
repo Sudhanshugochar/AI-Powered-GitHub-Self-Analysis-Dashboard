@@ -1,0 +1,16 @@
+pandas
+numpy
+matplotlib
+plotly
+scikit-learn
+streamlit
+requests
+faiss-cpu
+sentence-transformers
+statsmodels
+prophet
+python-dotenv
+ollama
+seaborn
+textblob
+networkx
