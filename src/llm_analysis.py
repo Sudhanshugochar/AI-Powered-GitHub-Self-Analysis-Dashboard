@@ -32,7 +32,9 @@ class OllamaAnalyzer:
             return response['message']['content'].strip()
         except Exception as e:
             print(f"Error in skill extraction: {e}")
-            return ""
+            if "connection" in str(e).lower() or "refused" in str(e).lower():
+                return "Error: Ollama is not running. Please start it."
+            return f"Error: {str(e)}"
 
     def classify_topic(self, repo_description):
         prompt = f"Classify the following repository description into one of these topics: 'Web Development', 'Data Science', 'Machine Learning', 'Mobile App', 'DevOps', 'Other'. Return only the topic name.\n\nDescription: {repo_description}"
@@ -61,6 +63,42 @@ class OllamaAnalyzer:
             except Exception as e:
                 results[model] = {"error": str(e)}
         return results
+
+    def generate_user_title(self, stats):
+        prompt = f"""Based on the following GitHub stats, generate a creative, fun, RPG-style user title (max 5 words).
+        Return ONLY the title.
+        Stats:
+        - Top Language: {stats.get('top_language')}
+        - Longest Streak: {stats.get('longest_streak')} days
+        - Most Productive Day: {stats.get('most_productive_day')}
+        """
+        try:
+            response = self.client.chat(model=self.model, messages=[
+                {'role': 'user', 'content': prompt}
+            ])
+            return response['message']['content'].strip().replace('"', '')
+        except Exception as e:
+            print(f"Error generating title: {e}")
+            return "The GitHub Wanderer"
+
+    def analyze_readme_quality(self, readme_content):
+        prompt = f"""Analyze the quality of this README file.
+        Provide a checklist of 3-5 improvements. Focus on missing standard sections (Installation, Usage, Contributing, License).
+        Keep it concise and actionable.
+        README Content (first 2000 chars):
+        {readme_content[:2000]}
+        """
+        try:
+            response = self.client.chat(model=self.model, messages=[
+                {'role': 'user', 'content': prompt}
+            ])
+            return response['message']['content'].strip()
+        except Exception as e:
+            print(f"Error analyzing README: {e}")
+            if "connection" in str(e).lower() or "refused" in str(e).lower():
+                return "Error: Ollama is not running. Please start it."
+            return f"Error: {str(e)}"
+
 
 if __name__ == "__main__":
     analyzer = OllamaAnalyzer()

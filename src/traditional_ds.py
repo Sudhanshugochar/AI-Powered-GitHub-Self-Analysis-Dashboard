@@ -44,7 +44,8 @@ class TraditionalAnalyzer:
                 "updated_at": pd.to_datetime(repo_meta.get("updated_at"), errors='coerce'),
                 "topics": repo_meta.get("topics", []),
                 "readme_length": len(repo_details.get("readme", "")),
-                "readme_content": repo_details.get("readme", "")
+                "readme_content": repo_details.get("readme", ""),
+                "files": repo_details.get("files", [])
             })
 
             # Process Commits
@@ -90,6 +91,148 @@ class TraditionalAnalyzer:
         
         self.repos_df['cluster'] = clusters
         return self.repos_df[['name', 'cluster', 'stars', 'forks']]
+
+    def get_user_stats(self):
+        """Calculates advanced user statistics for GitHub Replay."""
+        stats = {
+            "top_language": "Unknown",
+            "longest_streak": 0,
+            "most_productive_day": "Unknown",
+            "total_commits": 0,
+            "chronotype": "Day Walker",
+            "most_active_month": "Unknown"
+        }
+
+        if self.repos_df is not None and not self.repos_df.empty:
+            lang_counts = self.repos_df['language'].value_counts()
+            if not lang_counts.empty:
+                stats["top_language"] = lang_counts.idxmax()
+
+        if self.commits_df is not None and not self.commits_df.empty:
+            # 0. Total Commits
+            stats["total_commits"] = len(self.commits_df)
+
+            # 1. Longest Streak
+            # Group by date to get unique days with commits
+            dates = self.commits_df['date'].dt.date.sort_values().unique()
+            
+            longest_streak = 0
+            current_streak = 0
+            
+            if len(dates) > 0:
+                current_streak = 1
+                longest_streak = 1
+                for i in range(1, len(dates)):
+                    delta = dates[i] - dates[i-1]
+                    if delta.days == 1:
+                        current_streak += 1
+                    else:
+                        longest_streak = max(longest_streak, current_streak)
+                        current_streak = 1
+                longest_streak = max(longest_streak, current_streak)
+            
+            stats["longest_streak"] = longest_streak
+
+            # 2. Most Productive Day
+            # 0=Monday, 6=Sunday
+            day_counts = self.commits_df['date'].dt.day_name().value_counts()
+            if not day_counts.empty:
+                stats["most_productive_day"] = day_counts.idxmax()
+
+            # 3. Chronotype (Night Owl vs Early Bird)
+            hours = self.commits_df['date'].dt.hour
+            avg_hour = hours.mean()
+            if avg_hour < 10:
+                stats["chronotype"] = "🌅 Early Bird"
+            elif avg_hour >= 20 or avg_hour < 4:
+                stats["chronotype"] = "🦉 Night Owl"
+            else:
+                stats["chronotype"] = "☕ Day Walker"
+
+            # 4. Most Active Month
+            month_counts = self.commits_df['date'].dt.month_name().value_counts()
+            if not month_counts.empty:
+                stats["most_active_month"] = month_counts.idxmax()
+
+        return stats
+
+    def calculate_health_score(self, repo_data):
+        files = repo_data.get("details", {}).get("files", [])
+        score = 0
+        missing = []
+        
+        checks = {
+            "README.md": "README",
+            "LICENSE": "License",
+            "CONTRIBUTING.md": "Contributing Guide",
+            ".gitignore": ".gitignore"
+        }
+        
+        for file, name in checks.items():
+            # Case insensitive check
+            if any(f.lower() == file.lower() for f in files):
+                score += 1
+            else:
+                missing.append(name)
+        
+        if score == 4: grade = "A"
+        elif score == 3: grade = "B"
+        elif score == 2: grade = "C"
+        else: grade = "D"
+        
+        return {"grade": grade, "missing": missing, "score": score}
+
+    def detect_tech_stack(self, repo_data):
+        files = repo_data.get("details", {}).get("files", [])
+        stack = []
+        
+        # Simple file-based detection
+        if any(f == "package.json" for f in files): stack.append("Node.js")
+        if any(f == "requirements.txt" or f == "pyproject.toml" for f in files): stack.append("Python")
+        if any(f == "Dockerfile" for f in files): stack.append("Docker")
+        if any(f == "docker-compose.yml" for f in files): stack.append("Docker Compose")
+        if any(f == "pom.xml" for f in files): stack.append("Java")
+        if any(f == "go.mod" for f in files): stack.append("Go")
+        if any(f == "Cargo.toml" for f in files): stack.append("Rust")
+        if any(f == "Gemfile" for f in files): stack.append("Ruby")
+        
+        return stack
+
+    def get_timeline_events(self):
+        events = []
+        
+        # 1. Joined GitHub
+        if self.profile_data.get("created_at"):
+            events.append({
+                "date": pd.to_datetime(self.profile_data["created_at"]).strftime("%Y-%m-%d"),
+                "title": "Joined GitHub",
+                "icon": "🎉"
+            })
+            
+        # 2. Repo Creation Milestones
+        if self.repos_df is not None and not self.repos_df.empty:
+            sorted_repos = self.repos_df.sort_values("created_at")
+            
+            # First Repo
+            first_repo = sorted_repos.iloc[0]
+            events.append({
+                "date": first_repo["created_at"].strftime("%Y-%m-%d"),
+                "title": f"First Repository Created: {first_repo['name']}",
+                "icon": "🚀"
+            })
+            
+            # Most Starred Repo
+            most_starred = sorted_repos.loc[sorted_repos['stars'].idxmax()]
+            if most_starred['stars'] > 0:
+                events.append({
+                    "date": most_starred["created_at"].strftime("%Y-%m-%d"), # Approximation: using creation date
+                    "title": f"Created Most Starred Repo: {most_starred['name']} ({most_starred['stars']}⭐)",
+                    "icon": "⭐"
+                })
+        
+        # Sort by date
+        events.sort(key=lambda x: x["date"])
+        return events
 
     def forecast_activity(self):
         if self.commits_df is None or self.commits_df.empty:
